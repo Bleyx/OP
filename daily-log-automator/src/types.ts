@@ -45,7 +45,7 @@ export interface DailyLogSettings {
 
 /** Default settings applied on first install. */
 export const DEFAULT_SETTINGS: DailyLogSettings = {
-	dailyLogFolder: "Daily Log",
+	dailyLogFolder: "01 Self/Daily Log",
 	enableAutoCarryOver: true,
 	enableTaskOriginTracking: true,
 	enableAutoStatistics: true,

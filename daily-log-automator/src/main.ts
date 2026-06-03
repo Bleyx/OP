@@ -146,60 +146,45 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 		let content = await this.app.vault.read(file);
 		const taskLine = `- [ ] ${taskText}`;
 
-		// Insert the task at the end of the "## New Tasks" section
-		content = this.insertInSection(content, "New Tasks", taskLine);
+		// Insert after the last task line (flat format, no sections)
+		content = this.insertTask(content, taskLine);
 
 		await this.app.vault.modify(file, content);
 		new Notice(`Task added: ${taskText}`);
 	}
 
+	/** Regex matching any task line */
+	private static TASK_RE = /^-\s+\[[ x]\]\s+/;
+
 	/**
-	 * Insert a line at the end of a given ## section, before the next ## heading
-	 * or end of file.
+	 * Insert a new task line after the last existing task line in the note.
+	 * If no tasks exist, insert after the counter lines.
 	 */
-	private insertInSection(
-		content: string,
-		sectionHeading: string,
-		line: string
-	): string {
+	private insertTask(content: string, taskLine: string): string {
 		const lines = content.split("\n");
-		const result: string[] = [];
-		let inserted = false;
-		let inSection = false;
+		let lastTaskIndex = -1;
 
 		for (let i = 0; i < lines.length; i++) {
-			const trimmed = lines[i].trim();
-
-			if (trimmed === `## ${sectionHeading}`) {
-				inSection = true;
-				result.push(lines[i]);
-				continue;
+			if (DailyLogAutomatorPlugin.TASK_RE.test(lines[i].trim())) {
+				lastTaskIndex = i;
 			}
+		}
 
-			// If we hit a new heading while inside our section, insert before it
-			if (inSection && trimmed.startsWith("## ")) {
-				// Add the task line before this heading
-				result.push(line);
-				result.push("");
-				inSection = false;
-				inserted = true;
+		if (lastTaskIndex >= 0) {
+			// Insert after the last task
+			lines.splice(lastTaskIndex + 1, 0, taskLine);
+		} else {
+			// No tasks found — insert after the counter lines
+			let insertAt = 0;
+			for (let i = 0; i < lines.length; i++) {
+				if (/^- (Carried over tasks|New Tasks):/i.test(lines[i].trim())) {
+					insertAt = i + 1;
+				}
 			}
-
-			result.push(lines[i]);
+			lines.splice(insertAt, 0, taskLine);
 		}
 
-		// If we reached EOF while still in section, append there
-		if (inSection && !inserted) {
-			result.push(line);
-			inserted = true;
-		}
-
-		// Fallback: if section was not found, append at end
-		if (!inserted) {
-			result.push(line);
-		}
-
-		return result.join("\n");
+		return lines.join("\n");
 	}
 
 	/* ------------------------------------------------------------------ */

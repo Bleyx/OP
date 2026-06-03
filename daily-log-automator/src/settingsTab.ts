@@ -28,10 +28,10 @@ export class DailyLogSettingsTab extends PluginSettingTab {
 			.setDesc("Folder inside your vault where daily notes are stored.")
 			.addText((text) =>
 				text
-					.setPlaceholder("Daily Log")
+					.setPlaceholder("01 Self/Daily Log")
 					.setValue(this.plugin.settings.dailyLogFolder)
 					.onChange(async (value) => {
-						this.plugin.settings.dailyLogFolder = value.trim() || "Daily Log";
+						this.plugin.settings.dailyLogFolder = value.trim() || "01 Self/Daily Log";
 						await this.plugin.saveSettings();
 					})
 			);

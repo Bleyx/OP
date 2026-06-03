@@ -1,0 +1,9 @@
+{
+	"id": "daily-log-automator",
+	"name": "Daily Log Automator",
+	"version": "1.0.0",
+	"minAppVersion": "1.0.0",
+	"description": "Automatically creates and maintains daily log structure, carries forward unfinished tasks, and keeps task statistics updated.",
+	"author": "Mohamed",
+	"isDesktopOnly": false
+}

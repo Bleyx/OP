@@ -31,6 +31,9 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 	/** Debounce handle to avoid rapid successive stat updates */
 	private statsDebounce: ReturnType<typeof setTimeout> | null = null;
 
+	/** Track files we are currently populating to avoid re-triggering */
+	private populatingFiles: Set<string> = new Set();
+
 	/* ------------------------------------------------------------------ */
 	/*  Lifecycle                                                          */
 	/* ------------------------------------------------------------------ */
@@ -55,6 +58,13 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 
 		// --- Settings tab ---
 		this.addSettingTab(new DailyLogSettingsTab(this.app, this));
+
+		// --- Auto-populate new daily notes on creation ---
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				if (file instanceof TFile) this.onFileCreated(file);
+			})
+		);
 
 		// --- Auto-statistics on file modify ---
 		this.registerEvent(
@@ -136,60 +146,83 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 		let content = await this.app.vault.read(file);
 		const taskLine = `- [ ] ${taskText}`;
 
-		// Insert the task at the end of the "## New Tasks" section
-		content = this.insertInSection(content, "New Tasks", taskLine);
+		// Insert after the last task line (flat format, no sections)
+		content = this.insertTask(content, taskLine);
 
 		await this.app.vault.modify(file, content);
 		new Notice(`Task added: ${taskText}`);
 	}
 
+	/** Regex matching any task line */
+	private static TASK_RE = /^-\s+\[[ x]\]\s+/;
+
 	/**
-	 * Insert a line at the end of a given ## section, before the next ## heading
-	 * or end of file.
+	 * Insert a new task line after the last existing task line in the note.
+	 * If no tasks exist, insert after the counter lines.
 	 */
-	private insertInSection(
-		content: string,
-		sectionHeading: string,
-		line: string
-	): string {
+	private insertTask(content: string, taskLine: string): string {
 		const lines = content.split("\n");
-		const result: string[] = [];
-		let inserted = false;
-		let inSection = false;
+		let lastTaskIndex = -1;
 
 		for (let i = 0; i < lines.length; i++) {
-			const trimmed = lines[i].trim();
-
-			if (trimmed === `## ${sectionHeading}`) {
-				inSection = true;
-				result.push(lines[i]);
-				continue;
+			if (DailyLogAutomatorPlugin.TASK_RE.test(lines[i].trim())) {
+				lastTaskIndex = i;
 			}
+		}
 
-			// If we hit a new heading while inside our section, insert before it
-			if (inSection && trimmed.startsWith("## ")) {
-				// Add the task line before this heading
-				result.push(line);
-				result.push("");
-				inSection = false;
-				inserted = true;
+		if (lastTaskIndex >= 0) {
+			// Insert after the last task
+			lines.splice(lastTaskIndex + 1, 0, taskLine);
+		} else {
+			// No tasks found — insert after the counter lines
+			let insertAt = 0;
+			for (let i = 0; i < lines.length; i++) {
+				if (/^- (Carried over tasks|New Tasks):/i.test(lines[i].trim())) {
+					insertAt = i + 1;
+				}
 			}
-
-			result.push(lines[i]);
+			lines.splice(insertAt, 0, taskLine);
 		}
 
-		// If we reached EOF while still in section, append there
-		if (inSection && !inserted) {
-			result.push(line);
-			inserted = true;
-		}
+		return lines.join("\n");
+	}
 
-		// Fallback: if section was not found, append at end
-		if (!inserted) {
-			result.push(line);
-		}
+	/* ------------------------------------------------------------------ */
+	/*  Auto-populate new daily notes on creation                          */
+	/* ------------------------------------------------------------------ */
 
-		return result.join("\n");
+	/**
+	 * Triggered whenever a file is created in the vault.
+	 * If it's a new daily note (YYYY-MM-DD.md in the Daily Log folder),
+	 * automatically populate it with the template + carried-over tasks.
+	 */
+	private async onFileCreated(file: TFile): Promise<void> {
+		if (!this.isDailyNote(file)) return;
+		if (this.populatingFiles.has(file.path)) return;
+
+		// Small delay to let Obsidian finish creating the file
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Only populate if the file is empty or nearly empty
+		const content = await this.app.vault.read(file);
+		if (content.trim().length > 0) return;
+
+		const dateStr = file.name.replace(".md", "");
+
+		try {
+			this.populatingFiles.add(file.path);
+
+			const carriedTasks = await this.carryOver.getCarryOverTasks(dateStr);
+			const generated = this.generator.generate(carriedTasks);
+
+			await this.app.vault.modify(file, generated);
+
+			new Notice(
+				`Daily log auto-populated for ${dateStr} with ${carriedTasks.length} carried-over task(s).`
+			);
+		} finally {
+			this.populatingFiles.delete(file.path);
+		}
 	}
 
 	/* ------------------------------------------------------------------ */

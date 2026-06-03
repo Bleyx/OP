@@ -1,0 +1,26 @@
+{
+	"name": "obsidian-daily-log-automator",
+	"version": "1.0.0",
+	"description": "Obsidian plugin: automatically creates daily logs, carries forward unfinished tasks, and maintains task statistics.",
+	"main": "main.js",
+	"scripts": {
+		"dev": "node esbuild.config.mjs",
+		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"lint": "tsc -noEmit -skipLibCheck"
+	},
+	"keywords": [
+		"obsidian",
+		"plugin",
+		"daily-notes",
+		"tasks",
+		"automation"
+	],
+	"license": "MIT",
+	"devDependencies": {
+		"@types/node": "^22.15.0",
+		"builtin-modules": "^4.0.0",
+		"esbuild": "^0.25.0",
+		"obsidian": "latest",
+		"typescript": "^5.8.0"
+	}
+}

@@ -31,6 +31,9 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 	/** Debounce handle to avoid rapid successive stat updates */
 	private statsDebounce: ReturnType<typeof setTimeout> | null = null;
 
+	/** Track files we are currently populating to avoid re-triggering */
+	private populatingFiles: Set<string> = new Set();
+
 	/* ------------------------------------------------------------------ */
 	/*  Lifecycle                                                          */
 	/* ------------------------------------------------------------------ */
@@ -55,6 +58,13 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 
 		// --- Settings tab ---
 		this.addSettingTab(new DailyLogSettingsTab(this.app, this));
+
+		// --- Auto-populate new daily notes on creation ---
+		this.registerEvent(
+			this.app.vault.on("create", (file) => {
+				if (file instanceof TFile) this.onFileCreated(file);
+			})
+		);
 
 		// --- Auto-statistics on file modify ---
 		this.registerEvent(
@@ -190,6 +200,44 @@ export default class DailyLogAutomatorPlugin extends Plugin {
 		}
 
 		return result.join("\n");
+	}
+
+	/* ------------------------------------------------------------------ */
+	/*  Auto-populate new daily notes on creation                          */
+	/* ------------------------------------------------------------------ */
+
+	/**
+	 * Triggered whenever a file is created in the vault.
+	 * If it's a new daily note (YYYY-MM-DD.md in the Daily Log folder),
+	 * automatically populate it with the template + carried-over tasks.
+	 */
+	private async onFileCreated(file: TFile): Promise<void> {
+		if (!this.isDailyNote(file)) return;
+		if (this.populatingFiles.has(file.path)) return;
+
+		// Small delay to let Obsidian finish creating the file
+		await new Promise((resolve) => setTimeout(resolve, 200));
+
+		// Only populate if the file is empty or nearly empty
+		const content = await this.app.vault.read(file);
+		if (content.trim().length > 0) return;
+
+		const dateStr = file.name.replace(".md", "");
+
+		try {
+			this.populatingFiles.add(file.path);
+
+			const carriedTasks = await this.carryOver.getCarryOverTasks(dateStr);
+			const generated = this.generator.generate(carriedTasks);
+
+			await this.app.vault.modify(file, generated);
+
+			new Notice(
+				`Daily log auto-populated for ${dateStr} with ${carriedTasks.length} carried-over task(s).`
+			);
+		} finally {
+			this.populatingFiles.delete(file.path);
+		}
 	}
 
 	/* ------------------------------------------------------------------ */

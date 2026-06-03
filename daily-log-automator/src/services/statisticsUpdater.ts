@@ -1,15 +1,17 @@
 /**
- * StatisticsUpdater — keeps the task-count header lines in sync with actual
- * task counts inside each section.
+ * StatisticsUpdater — keeps the task-count header lines in sync.
  *
- * Scans the note for "## Carried Over Tasks" and "## New Tasks" sections,
- * counts all task lines (`- [ ]` and `- [x]`) within each, and rewrites the
- * header counters accordingly.
+ * In the flat note format (no section headers), tasks are distinguished by
+ * origin markers: lines containing "🔄 From" are carried-over tasks,
+ * task lines without that marker are new tasks.
  */
+
+/** Regex matching the origin-tracking annotation */
+const ORIGIN_MARKER_RE = /\u{1F504}\s*From\s+\d{4}-\d{2}-\d{2}/u;
 
 export class StatisticsUpdater {
 	/** Regex matching the carried-over counter line */
-	private static CARRIED_RE = /^- Carried Over Tasks:\s*\d+$/;
+	private static CARRIED_RE = /^- Carried over tasks:\s*\d+$/i;
 	/** Regex matching the new-tasks counter line */
 	private static NEW_RE = /^- New Tasks:\s*\d+$/;
 	/** Regex matching any task line (checked or unchecked) */
@@ -20,8 +22,20 @@ export class StatisticsUpdater {
 	 * Returns null if no changes were needed (avoids unnecessary writes).
 	 */
 	update(content: string): string | null {
-		const carriedCount = this.countTasksInSection(content, "Carried Over Tasks");
-		const newCount = this.countTasksInSection(content, "New Tasks");
+		const lines = content.split("\n");
+		let carriedCount = 0;
+		let newCount = 0;
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!StatisticsUpdater.TASK_RE.test(trimmed)) continue;
+
+			if (ORIGIN_MARKER_RE.test(trimmed)) {
+				carriedCount++;
+			} else {
+				newCount++;
+			}
+		}
 
 		let updated = content;
 		let changed = false;
@@ -30,7 +44,7 @@ export class StatisticsUpdater {
 		updated = updated.replace(
 			StatisticsUpdater.CARRIED_RE,
 			(match) => {
-				const replacement = `- Carried Over Tasks: ${carriedCount}`;
+				const replacement = `- Carried over tasks: ${carriedCount}`;
 				if (match !== replacement) changed = true;
 				return replacement;
 			}
@@ -47,26 +61,5 @@ export class StatisticsUpdater {
 		);
 
 		return changed ? updated : null;
-	}
-
-	/** Count task lines inside a specific ## section. */
-	private countTasksInSection(content: string, sectionHeading: string): number {
-		const lines = content.split("\n");
-		let inSection = false;
-		let count = 0;
-
-		for (const line of lines) {
-			const trimmed = line.trim();
-
-			if (trimmed.startsWith("## ")) {
-				inSection = trimmed === `## ${sectionHeading}`;
-				continue;
-			}
-
-			if (inSection && StatisticsUpdater.TASK_RE.test(trimmed)) {
-				count++;
-			}
-		}
-		return count;
 	}
 }
